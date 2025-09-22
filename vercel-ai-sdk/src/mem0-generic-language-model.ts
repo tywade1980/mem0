@@ -1,8 +1,7 @@
 /* eslint-disable camelcase */
 import {
   LanguageModelV2CallOptions,
-  LanguageModelV2Message,
-  LanguageModelV2Source
+  LanguageModelV2Message
 } from '@ai-sdk/provider';
 
 import { LanguageModelV2 } from '@ai-sdk/provider';
@@ -90,7 +89,7 @@ export class Mem0GenericLanguageModel implements LanguageModelV2 {
     };
 
     // Add the system prompt to the beginning of the messages if there are memories
-    if (memories?.length > 0) {
+    if (memories && (Array.isArray(memories) ? memories.length > 0 : (memories.results && memories.results.length > 0))) {
       messagesPrompts.unshift(systemPrompt);
     }
 
@@ -129,6 +128,7 @@ export class Mem0GenericLanguageModel implements LanguageModelV2 {
       // Process memories and update prompts
       const { memories, messagesPrompts: updatedPrompts } = await this.processMemories(messagesPrompts, mem0Config);
       
+      const isGraphEnabled = mem0Config?.enable_graph;
       const model = selector.createProvider();
 
       const ans = await model.doGenerate({
@@ -137,37 +137,34 @@ export class Mem0GenericLanguageModel implements LanguageModelV2 {
       });
       
       // If there are no memories, return the original response
-      if (!memories || memories?.length === 0) {
+      if (!memories || (Array.isArray(memories) ? memories.length === 0 : (!memories.results || memories.results.length === 0))) {
         return ans;
       }
       
       try {
-        // Create sources array with existing sources
-        const sources: LanguageModelV2Source[] = [
-          {
-            type: "source",
-            title: "Mem0 Memories",
-            sourceType: "url",
-            id: "mem0-" + generateRandomId(),
-            url: "https://app.mem0.ai",
-            providerMetadata: {
-              mem0: {
-                memories: memories,
-                memoriesText: memories
-                  ?.map((memory: any) => memory?.memory)
-                  .join("\n\n"),
-              },
-            },
+        // Include memory information in provider metadata instead of sources
+        const memoriesToShow = isGraphEnabled ? memories : memories;
+        const memoryMetadata = {
+          mem0: {
+            memories: memoriesToShow || [],
+            memoriesText: Array.isArray(memoriesToShow) 
+              ? memoriesToShow?.map((memory: any) => memory?.memory).join("\n\n") || ""
+              : memoriesToShow?.results?.map((memory: any) => memory?.memory).join("\n\n") || "",
+            isGraphEnabled: isGraphEnabled || false,
           },
-        ];
+        };
+        
+        return {
+          ...ans,
+          providerMetadata: {
+            ...ans.providerMetadata,
+            ...memoryMetadata,
+          }
+        };
       } catch (e) {
-        console.error("Error while creating sources");
+        console.error("Error while creating memory metadata");
+        return ans;
       }
- 
-      return {
-        ...ans,
-        // sources
-      };
     } catch (error) {
       // Handle errors properly
       console.error("Error in doGenerate:", error);
@@ -209,7 +206,7 @@ export class Mem0GenericLanguageModel implements LanguageModelV2 {
       });
 
       // If there are no memories, return the original stream
-      if (!memories || memories?.length === 0) {
+      if (!memories || (Array.isArray(memories) ? memories.length === 0 : (!memories.results || memories.results.length === 0))) {
         return streamResponse;
       }
 
